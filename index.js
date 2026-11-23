@@ -111,13 +111,13 @@ function attachDocumentObserver(doc) {
 
   const state = {
     observer: null,
-    rafId: 0,
+    scheduled: false,
     dirtyNodes: new Set(),
     applying: false,
   };
 
   const flush = () => {
-    state.rafId = 0;
+    state.scheduled = false;
     if (!settings.enabled || !translator) {
       state.dirtyNodes.clear();
       return;
@@ -144,13 +144,9 @@ function attachDocumentObserver(doc) {
   const schedule = (node) => {
     if (!node) return;
     state.dirtyNodes.add(node);
-    if (!state.rafId) {
-      const win = doc.defaultView || globalThis;
-      if (doc.hidden || typeof win.requestAnimationFrame !== 'function') {
-        state.rafId = win.setTimeout(flush, 16);
-      } else {
-        state.rafId = win.requestAnimationFrame(flush);
-      }
+    if (!state.scheduled) {
+      state.scheduled = true;
+      queueMicrotask(flush);
     }
   };
 
@@ -217,11 +213,11 @@ function observeHostRoot(el) {
   if (!el || el.nodeType !== 1 || observedHosts.has(el)) return;
 
   let applying = false;
-  let rafId = 0;
+  let scheduled = false;
   const dirty = new Set();
 
   const flush = () => {
-    rafId = 0;
+    scheduled = false;
     if (!settings.enabled || !translator) {
       dirty.clear();
       return;
@@ -239,7 +235,10 @@ function observeHostRoot(el) {
 
   const schedule = (node) => {
     dirty.add(node);
-    if (!rafId) rafId = requestAnimationFrame(flush);
+    if (!scheduled) {
+      scheduled = true;
+      queueMicrotask(flush);
+    }
   };
 
   const obs = new MutationObserver((records) => {
