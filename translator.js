@@ -25,15 +25,30 @@ export const SKIP_CONTENT_SELECTOR = [
   '.forum-title',
   '.reading-content',
   '.reading-page',
-  '.vn-cast-text',
+  '.vn-cast-text > strong',
   '.log-row',
   '.stvi-skip',
 ].join(',');
 
 export const TRANSLATABLE_ATTRS = ['title', 'placeholder', 'aria-label', 'alt', 'data-label', 'data-tip'];
 
-const COMPOSITE_SEPARATORS = [' · ', '｜', ' | ', ' / ', '：', ' — '];
+const COMPOSITE_SEPARATORS = [
+  { sep: ' · ', out: ' · ' },
+  { sep: '·', out: ' · ' },
+  { sep: '｜', out: ' | ' },
+  { sep: ' | ', out: ' | ' },
+  { sep: ' / ', out: ' / ' },
+  { sep: '，', out: ', ' },
+  { sep: '、', out: ', ' },
+  { sep: '：', out: ': ' },
+  { sep: ': ', out: ': ' },
+  { sep: ' — ', out: ' — ' },
+];
 const TRAILING_PUNCT_RE = /^([\s\S]+?)([：:…？?！!。]+)$/;
+const LEADING_PUNCT_RE = /^([·•\-:\s]+)([\s\S]+)$/;
+const ZH_WEEKDAY = { '一': 'Thứ Hai', '二': 'Thứ Ba', '三': 'Thứ Tư', '四': 'Thứ Năm', '五': 'Thứ Sáu', '六': 'Thứ Bảy', '日': 'Chủ Nhật', '天': 'Chủ Nhật' };
+const ZH_DATE_WEEKDAY_RE = /^(\d{1,2})月(\d{1,2})日\s*星期([一二三四五六日天])$/;
+const ZH_FULL_DATE_RE = /^(\d{4})年(\d{1,2})月(\d{1,2})日$/;
 
 /**
  * Compile `{0}`, `{1}` template patterns into safe RegExp matchers.
@@ -81,6 +96,15 @@ export function createTranslator({ exact = {}, patterns = {}, onMissing = null }
   function translateCore(core, depth = 0) {
     if (!core || !CJK_RE.test(core)) return core;
 
+    const dw = ZH_DATE_WEEKDAY_RE.exec(core);
+    if (dw) {
+      return `${ZH_WEEKDAY[dw[3]] || dw[3]}, ${dw[2]} tháng ${dw[1]}`;
+    }
+    const fd = ZH_FULL_DATE_RE.exec(core);
+    if (fd) {
+      return `${fd[3]}/${fd[2]}/${fd[1]}`;
+    }
+
     const exactHit = exactMap.get(core);
     if (exactHit !== undefined) return exactHit;
 
@@ -100,8 +124,14 @@ export function createTranslator({ exact = {}, patterns = {}, onMissing = null }
       return out;
     }
 
-    // Try stripping trailing punctuation (e.g., "音色：" -> "Giọng đọc:")
+    // Try stripping leading/trailing punctuation (e.g., "音色：" -> "Giọng đọc:", "· 缓存" -> "· Bộ nhớ đệm")
     if (depth < 2) {
+      const lm = LEADING_PUNCT_RE.exec(core);
+      if (lm) {
+        const rest = lm[2].trim();
+        const restHit = exactMap.get(rest);
+        if (restHit !== undefined) return `${lm[1]}${restHit}`;
+      }
       const pm = TRAILING_PUNCT_RE.exec(core);
       if (pm) {
         const inner = pm[1].trim();
@@ -111,22 +141,21 @@ export function createTranslator({ exact = {}, patterns = {}, onMissing = null }
       }
     }
 
-    // Try splitting composite UI strings (e.g., "豆包语音 · 未连接")
-    if (depth < 1) {
-      for (const sep of COMPOSITE_SEPARATORS) {
+    // Try splitting composite UI strings (e.g., "豆包语音 · 未连接", "GPT 生图，点一下抽到最前面")
+    if (depth < 2) {
+      for (const { sep, out } of COMPOSITE_SEPARATORS) {
         if (!core.includes(sep)) continue;
         const parts = core.split(sep);
         let changed = false;
         const outParts = parts.map((p) => {
           const trimmed = p.trim();
-          if (!trimmed || !CJK_RE.test(trimmed)) return p;
+          if (!trimmed || !CJK_RE.test(trimmed)) return p.trim();
           const tr = translateCore(trimmed, depth + 1);
           if (tr !== trimmed) changed = true;
-          return p.replace(trimmed, tr);
+          return tr;
         });
         if (changed) {
-          const outSep = sep === '：' ? ': ' : sep;
-          return outParts.join(outSep);
+          return outParts.join(out).replace(/\s+([,.:;!?])/g, '$1').trim();
         }
       }
     }

@@ -84,8 +84,30 @@ function updateStatsUI() {
   el.append(badge, text);
 }
 
+const CSS_PATCH_ID = 'stvi-css-patch';
+const CSS_PATCH_TEXT = `
+.reading-art.folded .reading-art-image::after { content: "Xem tranh minh họa" !important; }
+.chat-photo.missing:after { content: "Ảnh này đã bị xóa khỏi Thư viện ảnh" !important; }
+`;
+
+function syncCssPatch(doc, active) {
+  if (!doc?.head) return;
+  const existing = doc.getElementById(CSS_PATCH_ID);
+  if (active) {
+    if (!existing) {
+      const style = doc.createElement('style');
+      style.id = CSS_PATCH_ID;
+      style.textContent = CSS_PATCH_TEXT;
+      doc.head.appendChild(style);
+    }
+  } else {
+    existing?.remove();
+  }
+}
+
 function attachDocumentObserver(doc) {
   if (!doc?.body || attachedDocs.has(doc)) return;
+  syncCssPatch(doc, settings.enabled);
 
   const state = {
     observer: null,
@@ -123,8 +145,12 @@ function attachDocumentObserver(doc) {
     if (!node) return;
     state.dirtyNodes.add(node);
     if (!state.rafId) {
-      const raf = doc.defaultView?.requestAnimationFrame || globalThis.requestAnimationFrame;
-      state.rafId = raf(flush);
+      const win = doc.defaultView || globalThis;
+      if (doc.hidden || typeof win.requestAnimationFrame !== 'function') {
+        state.rafId = win.setTimeout(flush, 16);
+      } else {
+        state.rafId = win.requestAnimationFrame(flush);
+      }
     }
   };
 
@@ -305,6 +331,7 @@ function applyAllNow() {
   document.querySelectorAll(IFRAME_HOST_SELECTOR).forEach((frame) => {
     try {
       if (frame.contentDocument?.body) {
+        syncCssPatch(frame.contentDocument, true);
         translator.translateTree(frame.contentDocument.body);
       }
     } catch {
@@ -320,6 +347,7 @@ function restoreAllNow() {
   document.querySelectorAll(IFRAME_HOST_SELECTOR).forEach((frame) => {
     try {
       if (frame.contentDocument?.body) {
+        syncCssPatch(frame.contentDocument, false);
         translator.restoreTree(frame.contentDocument.body);
       }
     } catch {
