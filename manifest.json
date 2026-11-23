@@ -1,0 +1,18 @@
+{
+  "display_name": "ST-iPhonie Việt Hóa",
+  "loading_order": 110,
+  "minimum_client_version": "1.13.2",
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Tawa",
+  "version": "1.0.0",
+  "auto_update": false,
+  "homePage": "https://github.com/furinamikuvn/audio-st-viethoa",
+  "hooks": {
+    "enable": "enable",
+    "disable": "disable",
+    "delete": "dispose"
+  }
+}
